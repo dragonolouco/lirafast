@@ -1,9 +1,9 @@
 from __future__ import annotations
 """Compact numeric stack VM for executable LiraFast methods.
 
-The VM is intentionally small and deterministic. A learned method can be encoded
-as numeric opcodes, persisted, audited, decoded and executed with new inputs
-without regenerating source code.
+The VM is deterministic and deliberately small. A learned method is encoded as
+numeric opcodes, validated as a control-flow graph, persisted, audited, decoded
+and executed with new inputs without regenerating source code.
 """
 from dataclasses import dataclass
 from enum import IntEnum
@@ -12,7 +12,7 @@ import struct
 from typing import Mapping, Sequence, Tuple
 
 MAGIC=b"LFVM6"
-VERSION=1
+VERSION=2
 HEADER=struct.Struct("<5sBHHH")
 INS=struct.Struct("<BH")
 
@@ -36,6 +36,8 @@ class Op(IntEnum):
     GT=34
     GE=35
     SELECT=40
+    JUMP_IF_FALSE=41
+    JUMP=42
     RETURN=255
 
 @dataclass(frozen=True)
@@ -50,33 +52,54 @@ class NumericProgram:
     code: Tuple[Instruction,...]
 
     def validate(self)->int:
-        depth=0; peak=0; returned=False
+        if not self.code: raise ValueError("empty program")
         binary={Op.ADD,Op.SUB,Op.MUL,Op.DIV,Op.MOD,Op.POW,Op.MIN,Op.MAX,Op.EQ,Op.NE,Op.LT,Op.LE,Op.GT,Op.GE}
         unary={Op.NEG,Op.ABS}
-        for pc,ins in enumerate(self.code):
-            if returned:
-                raise ValueError("instructions after RETURN")
-            if ins.op==Op.LOAD_INPUT:
+        seen_depth:dict[int,int]={}
+        work=[(0,0)]
+        peak=0
+        returns=0
+        while work:
+            pc,depth=work.pop()
+            if pc<0 or pc>=len(self.code): raise ValueError(f"jump outside program: {pc}")
+            old=seen_depth.get(pc)
+            if old is not None:
+                if old!=depth: raise ValueError(f"inconsistent stack depth at {pc}: {old} vs {depth}")
+                continue
+            seen_depth[pc]=depth
+            ins=self.code[pc]; op=ins.op
+            if op==Op.LOAD_INPUT:
                 if ins.arg>=len(self.inputs): raise ValueError(f"bad input index at {pc}")
-                depth+=1
-            elif ins.op==Op.LOAD_CONST:
+                nd=depth+1; nxt=[pc+1]
+            elif op==Op.LOAD_CONST:
                 if ins.arg>=len(self.constants): raise ValueError(f"bad constant index at {pc}")
-                depth+=1
-            elif ins.op in binary:
+                nd=depth+1; nxt=[pc+1]
+            elif op in binary:
                 if depth<2: raise ValueError(f"stack underflow at {pc}")
-                depth-=1
-            elif ins.op in unary:
+                nd=depth-1; nxt=[pc+1]
+            elif op in unary:
                 if depth<1: raise ValueError(f"stack underflow at {pc}")
-            elif ins.op==Op.SELECT:
+                nd=depth; nxt=[pc+1]
+            elif op==Op.SELECT:
                 if depth<3: raise ValueError(f"stack underflow at {pc}")
-                depth-=2
-            elif ins.op==Op.RETURN:
+                nd=depth-2; nxt=[pc+1]
+            elif op==Op.JUMP_IF_FALSE:
+                if depth<1: raise ValueError(f"stack underflow at {pc}")
+                if ins.arg>=len(self.code): raise ValueError(f"bad branch target at {pc}")
+                nd=depth-1; nxt=[pc+1,ins.arg]
+            elif op==Op.JUMP:
+                if ins.arg>=len(self.code): raise ValueError(f"bad jump target at {pc}")
+                nd=depth; nxt=[ins.arg]
+            elif op==Op.RETURN:
                 if depth!=1: raise ValueError(f"RETURN requires one value, got {depth}")
-                returned=True
+                returns+=1; peak=max(peak,depth); continue
             else:
                 raise ValueError(f"unknown opcode {ins.op}")
-            peak=max(peak,depth)
-        if not returned: raise ValueError("program has no RETURN")
+            peak=max(peak,nd)
+            for target in nxt:
+                if target>=len(self.code): raise ValueError(f"fallthrough outside program from {pc}")
+                work.append((target,nd))
+        if returns==0: raise ValueError("program has no reachable RETURN")
         return peak
 
     def execute(self, values: Mapping[str,float]|Sequence[float])->float:
@@ -86,16 +109,23 @@ class NumericProgram:
         else:
             if len(values)!=len(self.inputs): raise ValueError("wrong input count")
             argv=[float(x) for x in values]
-        s:list[float]=[]
-        for ins in self.code:
-            op=ins.op
-            if op==Op.LOAD_INPUT:s.append(argv[ins.arg])
-            elif op==Op.LOAD_CONST:s.append(self.constants[ins.arg])
-            elif op==Op.NEG:s[-1]=-s[-1]
-            elif op==Op.ABS:s[-1]=abs(s[-1])
+        s:list[float]=[]; pc=0; steps=0; max_steps=max(32,len(self.code)*8)
+        while True:
+            if pc<0 or pc>=len(self.code): raise RuntimeError("program counter outside code")
+            steps+=1
+            if steps>max_steps: raise RuntimeError("instruction budget exceeded")
+            ins=self.code[pc]; op=ins.op
+            if op==Op.LOAD_INPUT:s.append(argv[ins.arg]); pc+=1
+            elif op==Op.LOAD_CONST:s.append(self.constants[ins.arg]); pc+=1
+            elif op==Op.NEG:s[-1]=-s[-1]; pc+=1
+            elif op==Op.ABS:s[-1]=abs(s[-1]); pc+=1
             elif op==Op.RETURN:return s[-1]
             elif op==Op.SELECT:
-                false=s.pop(); true=s.pop(); cond=s.pop(); s.append(true if cond else false)
+                false=s.pop(); true=s.pop(); cond=s.pop(); s.append(true if cond else false); pc+=1
+            elif op==Op.JUMP_IF_FALSE:
+                cond=s.pop(); pc=pc+1 if cond else ins.arg
+            elif op==Op.JUMP:
+                pc=ins.arg
             else:
                 b=s.pop(); a=s.pop()
                 if op==Op.ADD:r=a+b
@@ -114,8 +144,7 @@ class NumericProgram:
                 elif op==Op.GE:r=float(a>=b)
                 else:raise ValueError(f"unsupported opcode {op}")
                 if not math.isfinite(r): raise ArithmeticError("non-finite numeric result")
-                s.append(float(r))
-        raise RuntimeError("unreachable")
+                s.append(float(r)); pc+=1
 
     def to_bytes(self)->bytes:
         self.validate()

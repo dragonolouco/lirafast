@@ -1,21 +1,49 @@
 # LiraFast
 
-Research repository for **LiraFast**, a separate fast-execution variant of the Lira project.
+Experimental research project for **executable structural intelligence**: store reusable methods, relations, error guards and selectively verified results in a compact, reversible format, then use a low-latency runtime to route known structures immediately and reserve expensive search for genuinely new barriers.
 
-## v0.3 — Adaptive Structural Engine
+## Current version: v0.5 research release
 
-This branch contains a small auditable prototype of the current research direction:
+Core ideas now implemented:
 
-- executable structural parameters instead of memorized final answers;
-- bitset state and procedure composition;
-- selective method activation through a compiled pivot index;
-- bounded historical state memory;
-- verified route-template reuse (procedure cache, not result cache);
-- external verification -> local constraint -> reroute;
-- packed numeric format work in the full project.
+- reversible numeric knowledge representation;
+- structural method memory;
+- exact + variant-aware error memory;
+- optional high-confidence final-result cache;
+- `DEEP -> FAST` method promotion after repeated verification;
+- data-driven primitive/cue loading from structured knowledge;
+- bounded semantic compile cache;
+- local-negation suppression for fast cue routing;
+- AST-targeted incremental Python edits;
+- single-file `.lirafast` v5 section container with checksums;
+- selective structural solver from earlier v0.3 work.
 
-The full working project remains larger than this research reference prototype. The files in this branch are intentionally compact so the core algorithm can be reviewed independently.
+## Principle
 
-## Important
+```text
+few reusable primitives
++ composition
++ verification
++ persistent error/method memory
+= many reconstructable results
+```
 
-The benchmarks here measure routing/kernel overhead in synthetic tasks. They are **not** evidence that LiraFast already outperforms general-purpose LLMs.
+LiraFast is **not** currently a replacement for a frontier LLM. The repository is a research runtime and format prototype. Performance claims in the docs are microbenchmarks of specific routing/storage kernels unless explicitly stated otherwise.
+
+## Run tests
+
+```bash
+python -m pip install -r requirements.txt
+PYTHONPATH=. python -m pytest -q
+```
+
+## CLI examples
+
+```bash
+python lirafast_cli.py compile-text "crie função python para somar"
+python lirafast_cli.py inspect model.lirafast
+python lirafast_cli.py pack-memory memory.json model.lirafast
+python lirafast_cli.py patch-python app.py Player.update replacement.py
+```
+
+See `V05_ARCHITECTURE.md`, `V04_ARCHITECTURE.md` and `V03_RESEARCH_STATUS.md` for the evolution of the design.

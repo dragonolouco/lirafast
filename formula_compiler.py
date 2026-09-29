@@ -1,12 +1,12 @@
 from __future__ import annotations
 """Safe expression -> NumericProgram compiler.
 
-Only a deliberately small mathematical AST is accepted. No attributes, imports,
-subscripting, arbitrary calls, comprehensions or Python eval are used.
+Only a deliberately small mathematical AST is accepted. Conditional expressions
+compile to real lazy branches, so the non-selected branch is never executed.
 """
 import ast
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Sequence
 from numeric_vm import Instruction, NumericProgram, Op
 
 _BIN={ast.Add:Op.ADD,ast.Sub:Op.SUB,ast.Mult:Op.MUL,ast.Div:Op.DIV,ast.Mod:Op.MOD,ast.Pow:Op.POW}
@@ -20,10 +20,8 @@ class CompiledFormula:
 class FormulaCompiler:
     def __init__(self,inputs:Sequence[str]|None=None)->None:
         self.explicit_inputs=tuple(inputs) if inputs is not None else None
-        self._names:List[str]=[]
-        self._name_index:Dict[str,int]={}
-        self._consts:List[float]=[]
-        self._const_index:Dict[float,int]={}
+        self._names:List[str]=[]; self._name_index:Dict[str,int]={}
+        self._consts:List[float]=[]; self._const_index:Dict[float,int]={}
         self._code:List[Instruction]=[]
 
     def _input(self,name:str)->int:
@@ -63,7 +61,16 @@ class FormulaCompiler:
             self._emit(node.left); self._emit(node.comparators[0]); self._code.append(Instruction(_CMP[type(node.ops[0])]))
             return
         if isinstance(node,ast.IfExp):
-            self._emit(node.test); self._emit(node.body); self._emit(node.orelse); self._code.append(Instruction(Op.SELECT)); return
+            self._emit(node.test)
+            branch_pos=len(self._code); self._code.append(Instruction(Op.JUMP_IF_FALSE,0))
+            self._emit(node.body)
+            jump_pos=len(self._code); self._code.append(Instruction(Op.JUMP,0))
+            false_target=len(self._code)
+            self._emit(node.orelse)
+            end_target=len(self._code)
+            self._code[branch_pos]=Instruction(Op.JUMP_IF_FALSE,false_target)
+            self._code[jump_pos]=Instruction(Op.JUMP,end_target)
+            return
         if isinstance(node,ast.Call) and isinstance(node.func,ast.Name):
             name=node.func.id
             if name=="abs" and len(node.args)==1:

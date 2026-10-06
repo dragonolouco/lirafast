@@ -17,6 +17,7 @@ Core ideas now implemented:
 - AST-targeted incremental Python edits;
 - single-file `.lirafast` v5 section container with checksums;
 - selective structural solver from earlier v0.3 work.
+- local-network coordinator/worker MVP for verifiable integer batch computation;
 
 ## Principle
 
@@ -47,3 +48,14 @@ python lirafast_cli.py patch-python app.py Player.update replacement.py
 ```
 
 See `V05_ARCHITECTURE.md`, `V04_ARCHITECTURE.md` and `V03_RESEARCH_STATUS.md` for the evolution of the design.
+
+## Local Wi-Fi compute
+
+The first distributed-compute prototype is documented in [`LAN_COMPUTE.md`](LAN_COMPUTE.md). Run `lan_compute.py worker` on a computer or Android device and use `lan_compute.py coordinator` to distribute verified numeric ranges across workers on the same Wi-Fi network.
+
+```bash
+python lan_compute.py worker --host 0.0.0.0 --port 8765
+python lan_compute.py coordinator --workers http://PHONE_IP:8765 --operation sum_squares --end 1000000
+```
+
+This is a measurable parallel-compute foundation, not a claim of quantum computing or universal speed superiority.

@@ -18,6 +18,7 @@ Core ideas now implemented:
 - single-file `.lirafast` v5 section container with checksums;
 - selective structural solver from earlier v0.3 work.
 - local-network coordinator/worker MVP for verifiable integer batch computation;
+- deterministic OBJ reader, renderer and procedural mesh generator;
 
 ## Principle
 
@@ -59,3 +60,14 @@ python lan_compute.py coordinator --workers http://PHONE_IP:8765 --operation sum
 ```
 
 This is a measurable parallel-compute foundation, not a claim of quantum computing or universal speed superiority.
+
+## Structural 3D generation
+
+The [`obj_render.py`](obj_render.py) prototype reads OBJ meshes, renders them to PNG and generates procedural cubes or heightmap surfaces directly from Python. See [`OBJECT_GENERATION.md`](OBJECT_GENERATION.md) for the full workflow.
+
+```bash
+python obj_render.py render examples/models/nika_hair_v2.obj examples/rendered/nika_hair_v2.png
+python obj_render.py heightmap examples/generated/map.obj examples/generated/map.png --rows 64 --cols 64
+```
+
+This is the same structural principle applied to geometry: parameters + primitives + rules -> mesh -> visual result.
